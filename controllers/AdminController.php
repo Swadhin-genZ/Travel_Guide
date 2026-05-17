@@ -1,155 +1,131 @@
 <?php
-require_once __DIR__ . '/../config/app.php';
-require_once __DIR__ . '/../models/UserModel.php';
-require_once __DIR__ . '/../models/PostModel.php';
-require_once __DIR__ . '/../models/PostRequestModel.php';
-require_once __DIR__ . '/../models/OtherModels.php';
+// [TASK 3] Admin Controller
+require_once 'models/User.php';
+require_once 'models/Post.php';
+require_once 'models/PostRequest.php';
+require_once 'models/Comment.php';
 
 class AdminController {
-    private $userModel;
-    private $postModel;
-    private $prModel;
-    private $commentModel;
 
-    public function __construct() {
-        startSession();
-        $this->userModel    = new UserModel();
-        $this->postModel    = new PostModel();
-        $this->prModel      = new PostRequestModel();
-        $this->commentModel = new CommentModel();
+    private static function gate() {
+        if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
+            header("Location: index.php?action=login"); exit;
+        }
     }
 
-    private function gateCheck() {
-        requireRole('admin');
+    public static function dashboard() {
+        self::gate();
+        global $conn;
+        $userModel = new User($conn);
+        $postModel = new Post($conn);
+        $prModel   = new PostRequest($conn);
+        $cmtModel  = new Comment($conn);
+
+        $userCounts    = $userModel->getCounts();
+        $totalPosts    = $postModel->count();
+        $pendingReqs   = $prModel->countPending();
+        $totalComments = $cmtModel->count();
+        $pendingRequests = $prModel->getPending();
+
+        require 'views/admin/dashboard.php';
     }
 
-    public function getDashboardStats() {
-        $this->gateCheck();
-        return [
-            'user_counts'    => $this->userModel->counts(),
-            'pending_reqs'   => $this->prModel->countPending(),
-            'total_posts'    => $this->postModel->countAll(),
-            'total_comments' => $this->commentModel->countAll(),
-        ];
+    public static function users() {
+        self::gate();
+        global $conn;
+        $userModel = new User($conn);
+        $users = $userModel->getAll();
+        require 'views/admin/users.php';
     }
 
-    // User management
-    public function addUser() {
-        $this->gateCheck();
-        $errors = [];
+    public static function addUser() {
+        self::gate();
+        global $conn;
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) { $errors[] = 'Invalid token.'; return $errors; }
-            $name     = trim($_POST['name'] ?? '');
-            $email    = trim($_POST['email'] ?? '');
-            $password = $_POST['password'] ?? '';
-            $role     = $_POST['role'] ?? 'user';
-            $verified = isset($_POST['is_verified']) ? 1 : 0;
+            $name  = trim($_POST['name'] ?? '');
+            $email = trim($_POST['email'] ?? '');
+            $pass  = $_POST['password'] ?? '';
+            $role  = $_POST['role'] ?? 'user';
+            $errors = [];
 
-            if (empty($name))    $errors[] = 'Name required.';
-            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'Invalid email.';
-            if (strlen($password) < 8) $errors[] = 'Password min 8 chars.';
-            if (!in_array($role, ['admin','scout','user'])) $errors[] = 'Invalid role.';
+            if (!$name || !filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($pass) < 8) $errors[] = "Invalid input.";
+            if (!in_array($role, ['scout','user'])) $errors[] = "Invalid role.";
 
-            if (empty($errors)) {
-                if ($this->userModel->findByEmail($email)) {
-                    $errors[] = 'Email already exists.';
+            if (!$errors) {
+                $userModel = new User($conn);
+                if ($userModel->findByEmail($email)) {
+                    $_SESSION['flash_error'] = "Email already exists.";
                 } else {
-                    $this->userModel->adminCreate($name, $email, $password, $role, $verified);
-                    flashMessage('success', 'User created successfully.');
-                    header('Location: ' . BASE_URL . '/views/admin/users.php');
-                    exit;
+                    $hash = password_hash($pass, PASSWORD_BCRYPT);
+                    $userModel->createVerified($name, $email, $hash, $role);
+                    $_SESSION['flash'] = "User created.";
                 }
             }
         }
-        return $errors;
+        header("Location: index.php?action=admin_users"); exit;
     }
 
-    public function toggleVerify($userId) {
-        $this->gateCheck();
-        $this->userModel->toggleVerify($userId);
-        // Reflect if it's the current user's session
-        jsonResponse(['success' => true]);
+    public static function deleteUser() {
+        self::gate();
+        global $conn;
+        $id = intval($_POST['id'] ?? 0);
+        if ($id === $_SESSION['user_id']) { $_SESSION['flash_error'] = "Cannot delete yourself."; header("Location: index.php?action=admin_users"); exit; }
+        $userModel = new User($conn);
+        $userModel->delete($id);
+        $_SESSION['flash'] = "User deleted.";
+        header("Location: index.php?action=admin_users"); exit;
     }
 
-    public function deleteUser($userId) {
-        $this->gateCheck();
-        if ($userId == $_SESSION['user_id']) {
-            jsonResponse(['success' => false, 'message' => 'Cannot delete your own account.'], 403);
-        }
-        $this->userModel->delete($userId);
-        jsonResponse(['success' => true]);
+    public static function posts() {
+        self::gate();
+        global $conn;
+        $postModel = new Post($conn);
+        $prModel   = new PostRequest($conn);
+        $posts   = $postModel->getAll();
+        $pending = $prModel->getPending();
+        require 'views/admin/posts.php';
     }
 
-    // Post moderation
-    public function approveRequest($requestId) {
-        $this->gateCheck();
-        $req = $this->prModel->getById($requestId);
-        if (!$req || $req['status'] !== 'pending') {
-            jsonResponse(['success' => false, 'message' => 'Not found.'], 404);
-        }
-        $data = json_decode($req['post_data'], true);
-        // Move to posts table
-        $postId = $this->postModel->createFromRequest($req['scout_id'], $data);
-        $this->prModel->approve($requestId);
-        jsonResponse(['success' => true, 'post_id' => $postId]);
-    }
+    public static function editPost() {
+        self::gate();
+        global $conn;
+        $id = intval($_GET['id'] ?? 0);
+        $postModel = new Post($conn);
+        $post = $postModel->getById($id);
+        $errors = []; $success = '';
 
-    public function rejectRequest($requestId) {
-        $this->gateCheck();
-        $reason = trim($_POST['reason'] ?? '');
-        $this->prModel->reject($requestId, $reason);
-        jsonResponse(['success' => true]);
-    }
-
-    public function editPost($postId) {
-        $this->gateCheck();
-        $errors = [];
-        $post = $this->postModel->getById($postId);
-        if (!$post) {
-            flashMessage('error', 'Post not found.');
-            header('Location: ' . BASE_URL . '/views/admin/posts.php');
-            exit;
-        }
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) { $errors[] = 'Invalid token.'; }
-            else {
-                $data = [
-                    'title'              => trim($_POST['title'] ?? ''),
-                    'short_history'      => trim($_POST['short_history'] ?? ''),
-                    'country'            => trim($_POST['country'] ?? ''),
-                    'genre'              => $_POST['genre'] ?? '',
-                    'cost_level'         => $_POST['cost_level'] ?? '',
-                    'travel_medium_info' => trim($_POST['travel_medium_info'] ?? ''),
-                ];
-                foreach ($data as $k => $v) {
-                    if (empty($v)) $errors[] = ucfirst(str_replace('_', ' ', $k)) . ' is required.';
-                }
-                if (empty($errors)) {
-                    $this->postModel->update($postId, $data);
-                    flashMessage('success', 'Post updated.');
-                    header('Location: ' . BASE_URL . '/views/admin/posts.php');
-                    exit;
-                }
+            $title       = trim($_POST['title'] ?? '');
+            $history     = trim($_POST['short_history'] ?? '');
+            $country     = trim($_POST['country'] ?? '');
+            $genre       = $_POST['genre'] ?? '';
+            $cost_level  = $_POST['cost_level'] ?? '';
+            $travel_info = trim($_POST['travel_medium_info'] ?? '');
+            if (!$title || !$history || !$country) $errors[] = "Required fields missing.";
+            if (!$errors) {
+                $postModel->update($id, $title, $history, $country, $genre, $cost_level, $travel_info);
+                $success = "Post updated.";
+                $post = $postModel->getById($id);
             }
         }
-        return ['errors' => $errors, 'post' => $post];
+        require 'views/admin/edit_post.php';
     }
 
-    public function deletePost($postId) {
-        $this->gateCheck();
-        $this->postModel->delete($postId);
-        jsonResponse(['success' => true]);
+    public static function deletePost() {
+        self::gate();
+        global $conn;
+        $id = intval($_POST['id'] ?? 0);
+        $postModel = new Post($conn);
+        $postModel->delete($id);
+        $_SESSION['flash'] = "Post deleted.";
+        header("Location: index.php?action=admin_posts"); exit;
     }
 
-    public function deleteComment($commentId) {
-        $this->gateCheck();
-        $this->commentModel->delete($commentId);
-        jsonResponse(['success' => true]);
+    public static function comments() {
+        self::gate();
+        global $conn;
+        $cmtModel = new Comment($conn);
+        $comments = $cmtModel->getAll();
+        require 'views/admin/comments.php';
     }
-
-    public function getAllUsers()    { $this->gateCheck(); return $this->userModel->getAll(); }
-    public function getAllPosts()    { $this->gateCheck(); return $this->postModel->getAll(); }
-    public function getPendingReqs() { $this->gateCheck(); return $this->prModel->getPending(); }
-    public function getAllReqs()     { $this->gateCheck(); return $this->prModel->getAll(); }
-    public function getAllComments() { $this->gateCheck(); return $this->commentModel->getAll(); }
 }
