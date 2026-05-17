@@ -1,127 +1,66 @@
 <?php
-$pageTitle = 'Manage Users';
-require_once __DIR__ . '/../../config/app.php';
-require_once __DIR__ . '/../../models/UserModel.php';
-require_once __DIR__ . '/../../controllers/AdminController.php';
-startSession();
-requireRole('admin');
-
-$ctrl  = new AdminController();
-$users = $ctrl->getAllUsers();
-$flash = getFlash();
-
-require_once __DIR__ . '/../shared/header.php';
+// [TASK 3] Admin Users Management
+require 'views/layouts/header.php';
 ?>
-<div class="container">
-    <div class="page-header-row">
-        <div>
-            <h1>User Management</h1>
-            <p>Manage all registered users</p>
-        </div>
-        <a href="<?= BASE_URL ?>/views/admin/add_user.php" class="btn btn-primary">+ Add User</a>
+<h2>User Management</h2>
+
+<details class="collapsible">
+    <summary class="btn btn-primary">+ Add New User</summary>
+    <div class="form-container" style="padding:1rem;">
+        <form method="POST" action="index.php?action=admin_add_user">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Name</label><input type="text" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label>Email</label><input type="email" name="email" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label><input type="password" name="password" required minlength="8">
+                </div>
+                <div class="form-group">
+                    <label>Role</label>
+                    <select name="role">
+                        <option value="user">User</option>
+                        <option value="scout">Scout</option>
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Create User</button>
+        </form>
     </div>
+</details>
 
-    <?php if ($flash): ?>
-        <div class="alert alert-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
-    <?php endif; ?>
-
-    <div class="card">
-        <div class="table-wrap">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>#</th><th>Name</th><th>Email</th><th>Role</th>
-                    <th>Status</th><th>Joined</th><th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
+<div class="table-wrap" style="margin-top:1.5rem;">
+    <table class="data-table">
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Verified</th><th>Joined</th><th>Actions</th></tr></thead>
+        <tbody>
             <?php foreach ($users as $u): ?>
-            <tr id="user-row-<?= $u['id'] ?>">
-                <td><?= $u['id'] ?></td>
+            <tr id="user-<?= $u['id'] ?>">
+                <td><?= htmlspecialchars($u['name']) ?></td>
+                <td><?= htmlspecialchars($u['email']) ?></td>
+                <td><span class="badge"><?= $u['role'] ?></span></td>
                 <td>
-                    <div class="user-name-cell">
-                        <div class="mini-avatar"><?= strtoupper(substr($u['name'], 0, 1)) ?></div>
-                        <?= e($u['name']) ?>
-                    </div>
-                </td>
-                <td><?= e($u['email']) ?></td>
-                <td><span class="role-badge role-<?= e($u['role']) ?>"><?= ucfirst(e($u['role'])) ?></span></td>
-                <td>
-                    <button class="toggle-verify-btn btn btn-sm <?= $u['is_verified'] ? 'btn-success' : 'btn-warning' ?>"
-                            data-id="<?= $u['id'] ?>"
-                            data-verified="<?= $u['is_verified'] ?>">
-                        <?= $u['is_verified'] ? '✅ Verified' : '⏳ Pending' ?>
-                    </button>
+                    <span id="vstatus-<?= $u['id'] ?>" class="status-badge status-<?= $u['is_verified'] ? 'approved' : 'pending' ?>">
+                        <?= $u['is_verified'] ? 'Verified' : 'Pending' ?>
+                    </span>
                 </td>
                 <td><?= date('M d, Y', strtotime($u['created_at'])) ?></td>
                 <td>
-                    <?php if ($u['id'] != $_SESSION['user_id']): ?>
-                    <button class="btn btn-sm btn-danger del-user-btn" data-id="<?= $u['id'] ?>" data-name="<?= e($u['name']) ?>">🗑 Delete</button>
+                    <?php if ($u['is_verified']): ?>
+                        <button class="btn btn-sm btn-outline" onclick="toggleVerify(<?= $u['id'] ?>, 0)">Unverify</button>
                     <?php else: ?>
-                    <span class="text-muted">You</span>
+                        <button class="btn btn-sm btn-success" onclick="toggleVerify(<?= $u['id'] ?>, 1)">Verify</button>
                     <?php endif; ?>
+                    <form method="POST" action="index.php?action=admin_delete_user" style="display:inline;">
+                        <input type="hidden" name="id" value="<?= $u['id'] ?>">
+                        <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete this user?')">Delete</button>
+                    </form>
                 </td>
             </tr>
             <?php endforeach; ?>
-            </tbody>
-        </table>
-        </div>
-    </div>
+        </tbody>
+    </table>
 </div>
-
-<script>
-var BASE_URL = '<?= BASE_URL ?>';
-
-// Toggle verification (AJAX)
-document.querySelectorAll('.toggle-verify-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-        var id       = this.getAttribute('data-id');
-        var verified = this.getAttribute('data-verified') === '1';
-        var self     = this;
-        var xhr = new XMLHttpRequest();
-        xhr.open('POST', BASE_URL + '/api/admin_toggle_verify.php', true);
-        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-        xhr.onreadystatechange = function() {
-            if (xhr.readyState === 4) {
-                try {
-                    var res = JSON.parse(xhr.responseText);
-                    if (res.success) {
-                        var nowVerified = !verified;
-                        self.setAttribute('data-verified', nowVerified ? '1' : '0');
-                        self.textContent = nowVerified ? '✅ Verified' : '⏳ Pending';
-                        self.className = 'toggle-verify-btn btn btn-sm ' + (nowVerified ? 'btn-success' : 'btn-warning');
-                    }
-                } catch(e) {}
-            }
-        };
-        xhr.send('id=' + encodeURIComponent(id));
-    });
-});
-
-// Delete user (AJAX)
-document.querySelectorAll('.del-user-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-        var id   = this.getAttribute('data-id');
-        var name = this.getAttribute('data-name');
-        if (!confirm('Delete user "' + name + '"? This will remove all their data.')) return;
-        var row = document.getElementById('user-row-' + id);
-        var xhr = new XMLHttpRequest();
-        xhr.open('POST', BASE_URL + '/api/admin_delete_user.php', true);
-        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-        xhr.onreadystatechange = function() {
-            if (xhr.readyState === 4) {
-                try {
-                    var res = JSON.parse(xhr.responseText);
-                    if (res.success) {
-                        row.style.opacity = '0';
-                        row.style.transition = 'opacity 0.3s';
-                        setTimeout(function() { row.remove(); }, 300);
-                    } else { alert(res.message || 'Failed.'); }
-                } catch(e) {}
-            }
-        };
-        xhr.send('id=' + encodeURIComponent(id));
-    });
-});
-</script>
-<?php require_once __DIR__ . '/../shared/footer.php'; ?>
+<script src="/travel_guide/public/js/admin.js"></script>
+<?php require 'views/layouts/footer.php'; ?>
