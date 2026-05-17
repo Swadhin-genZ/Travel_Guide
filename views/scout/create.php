@@ -1,46 +1,46 @@
-<?php require_once '../../config/database.php'; ?>
 <!DOCTYPE html>
-<html>
-<head>
-<title>Create Post Request</title>
-<style>
-body{font-family:Arial;background:#f4f4f4;padding:30px}
-.box{background:white;padding:20px;width:500px;margin:auto}
-input,textarea,select,button{width:100%;padding:10px;margin:8px 0}
-</style>
-</head>
+<html><head><meta charset="UTF-8"><title>Create Request</title></head>
 <body>
+<div style="max-width:500px;margin:40px auto;padding:24px;border:1px solid #ccc;border-radius:6px;">
+  <h2>New Post Request</h2>
+  <?php if ($error):   ?><p style="color:red;"><?= htmlspecialchars($error) ?></p><?php endif; ?>
+  <?php if ($success): ?><p style="color:green;"><?= htmlspecialchars($success) ?></p><?php endif; ?>
 
-<div class="box">
-<h2>Create Travel Post Request</h2>
+  <form id="createForm" method="POST" action="index.php?page=scout_create" enctype="multipart/form-data" novalidate>
+    <p><label>Title<br><input type="text" name="title" id="c_title" style="width:100%;padding:8px;box-sizing:border-box;"></label></p>
+    <p style="color:red;display:none;" id="err_title">Title is required.</p>
 
-<form method="POST" action="../../controllers/ScoutController.php">
+    <p><label>Short History<br><textarea name="history" id="c_history" rows="4" style="width:100%;padding:8px;box-sizing:border-box;"></textarea></label></p>
+    <p style="color:red;display:none;" id="err_history">History is required.</p>
 
-<input name="title" placeholder="Title" required>
+    <p><label>Country<br><input type="text" name="country" id="c_country" style="width:100%;padding:8px;box-sizing:border-box;"></label></p>
+    <p style="color:red;display:none;" id="err_country">Country is required.</p>
 
-<textarea name="history" placeholder="Short History"></textarea>
+    <p><label>Genre<br>
+      <select name="genre" style="width:100%;padding:8px;">
+        <option value="beach">Beach</option>
+        <option value="mountain">Mountain</option>
+        <option value="city">City</option>
+        <option value="historical">Historical</option>
+        <option value="other">Other</option>
+      </select>
+    </label></p>
 
-<input name="country" placeholder="Country">
+    <p><label>Cost Level<br>
+      <select name="cost" style="width:100%;padding:8px;">
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+      </select>
+    </label></p>
 
-<select name="genre">
-<option>Beach</option>
-<option>Mountain</option>
-<option>Historical</option>
-<option>City</option>
-</select>
+    <p><label>Travel Medium<br><input type="text" name="travel" id="c_travel" placeholder="e.g. flight, train" style="width:100%;padding:8px;box-sizing:border-box;"></label></p>
+    <p style="color:red;display:none;" id="err_travel">Travel medium is required.</p>
 
-<select name="cost">
-<option>low</option>
-<option>medium</option>
-<option>high</option>
-</select>
+    <p><label>Image (optional, max 2MB)<br><input type="file" name="image" accept="image/*"></label></p>
 
-<input name="travel" placeholder="Travel Medium">
-
-<button name="create">Submit</button>
-
-</form>
+    <button type="submit" style="width:100%;padding:10px;background:#2c3e50;color:#fff;border:none;cursor:pointer;">Submit Request</button>
+  </form>
 </div>
-
-</body>
-</html>
+<script src="public/js/scout.js"></script>
+</body></html>

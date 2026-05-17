@@ -1,62 +1,63 @@
 <?php
-require_once '../config/database.php';
-
+// [TASK 2, 3] Post Requests model
 class PostRequest {
+    private $conn;
 
-    public static function create($scout_id,$post_data){
-        global $conn;
-        $status="pending";
-
-        $stmt=mysqli_prepare($conn,
-        "INSERT INTO post_requests (scout_id,post_data,status,requested_at)
-         VALUES(?,?,?,NOW())");
-
-        mysqli_stmt_bind_param($stmt,"iss",$scout_id,$post_data,$status);
-        return mysqli_stmt_execute($stmt);
+    public function __construct($conn) {
+        $this->conn = $conn;
     }
 
-    public static function getByScout($scout_id){
-        global $conn;
-
-        $stmt=mysqli_prepare($conn,
-        "SELECT * FROM post_requests WHERE scout_id=?");
-
-        mysqli_stmt_bind_param($stmt,"i",$scout_id);
-        mysqli_stmt_execute($stmt);
-
-        return mysqli_stmt_get_result($stmt);
+    public function create($scoutId, $postData, $imagePath, $originalPostId = null) {
+        $json = json_encode($postData);
+        $stmt = $this->conn->prepare("INSERT INTO post_requests (scout_id, original_post_id, post_data, image_path, status) VALUES (?,?,?,?,'pending')");
+        $stmt->bind_param("iiss", $scoutId, $originalPostId, $json, $imagePath);
+        return $stmt->execute();
     }
 
-    public static function getById($id){
-        global $conn;
-
-        $stmt=mysqli_prepare($conn,
-        "SELECT * FROM post_requests WHERE id=?");
-
-        mysqli_stmt_bind_param($stmt,"i",$id);
-        mysqli_stmt_execute($stmt);
-
-        return mysqli_stmt_get_result($stmt);
+    public function getByScout($scoutId) {
+        $stmt = $this->conn->prepare("SELECT * FROM post_requests WHERE scout_id=? ORDER BY requested_at DESC");
+        $stmt->bind_param("i", $scoutId);
+        $stmt->execute();
+        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     }
 
-    public static function update($id,$post_data){
-        global $conn;
-
-        $stmt=mysqli_prepare($conn,
-        "UPDATE post_requests SET post_data=? WHERE id=?");
-
-        mysqli_stmt_bind_param($stmt,"si",$post_data,$id);
-        return mysqli_stmt_execute($stmt);
+    public function getById($id) {
+        $stmt = $this->conn->prepare("SELECT * FROM post_requests WHERE id=?");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        return $stmt->get_result()->fetch_assoc();
     }
 
-    public static function delete($id){
-        global $conn;
+    public function update($id, $scoutId, $postData, $imagePath) {
+        $json = json_encode($postData);
+        if ($imagePath) {
+            $stmt = $this->conn->prepare("UPDATE post_requests SET post_data=?, image_path=? WHERE id=? AND scout_id=? AND status='pending'");
+            $stmt->bind_param("ssii", $json, $imagePath, $id, $scoutId);
+        } else {
+            $stmt = $this->conn->prepare("UPDATE post_requests SET post_data=? WHERE id=? AND scout_id=? AND status='pending'");
+            $stmt->bind_param("sii", $json, $id, $scoutId);
+        }
+        return $stmt->execute();
+    }
 
-        $stmt=mysqli_prepare($conn,
-        "DELETE FROM post_requests WHERE id=?");
+    public function delete($id, $scoutId) {
+        $stmt = $this->conn->prepare("DELETE FROM post_requests WHERE id=? AND scout_id=? AND status='pending'");
+        $stmt->bind_param("ii", $id, $scoutId);
+        return $stmt->execute();
+    }
 
-        mysqli_stmt_bind_param($stmt,"i",$id);
-        return mysqli_stmt_execute($stmt);
+    public function getPending() {
+        $result = $this->conn->query("SELECT pr.*, u.name as scout_name FROM post_requests pr JOIN users u ON pr.scout_id=u.id WHERE pr.status='pending' ORDER BY pr.requested_at DESC");
+        return $result->fetch_all(MYSQLI_ASSOC);
+    }
+
+    public function updateStatus($id, $status, $reason = null) {
+        $stmt = $this->conn->prepare("UPDATE post_requests SET status=?, reject_reason=? WHERE id=?");
+        $stmt->bind_param("ssi", $status, $reason, $id);
+        return $stmt->execute();
+    }
+
+    public function countPending() {
+        return $this->conn->query("SELECT COUNT(*) as c FROM post_requests WHERE status='pending'")->fetch_assoc()['c'];
     }
 }
-?>
