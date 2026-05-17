@@ -1,72 +1,50 @@
-// ── JS Validation: Create Form ────────────────────────────────
-const createForm = document.getElementById('createForm');
-if (createForm) {
-    createForm.addEventListener('submit', function(e) {
-        let ok = true;
-        function show(id) { document.getElementById(id).style.display='block'; ok=false; }
-        function hide(id) { document.getElementById(id).style.display='none'; }
+// [TASK 2] Scout AJAX using XMLHttpRequest
 
-        document.getElementById('c_title').value.trim()   ? hide('err_title')   : show('err_title');
-        document.getElementById('c_history').value.trim() ? hide('err_history') : show('err_history');
-        document.getElementById('c_country').value.trim() ? hide('err_country') : show('err_country');
-        document.getElementById('c_travel').value.trim()  ? hide('err_travel')  : show('err_travel');
+// Delete pending request
+function deleteRequest(id) {
+    if (!confirm('Delete this request?')) return;
 
-        if (!ok) e.preventDefault();
-    });
-}
-
-// ── JS Validation: Edit Form ──────────────────────────────────
-const editForm = document.getElementById('editForm');
-if (editForm) {
-    editForm.addEventListener('submit', function(e) {
-        let ok = true;
-        function show(id) { document.getElementById(id).style.display='block'; ok=false; }
-        function hide(id) { document.getElementById(id).style.display='none'; }
-
-        document.getElementById('e_title').value.trim()   ? hide('err_e_title')   : show('err_e_title');
-        document.getElementById('e_history').value.trim() ? hide('err_e_history') : show('err_e_history');
-        document.getElementById('e_country').value.trim() ? hide('err_e_country') : show('err_e_country');
-        document.getElementById('e_travel').value.trim()  ? hide('err_e_travel')  : show('err_e_travel');
-
-        if (!ok) e.preventDefault();
-    });
-}
-
-// ── AJAX Delete using XMLHttpRequest ──────────────────────────
-function showToast(msg, color) {
-    const t = document.getElementById('toast');
-    if (!t) return;
-    t.textContent = msg;
-    t.style.background = color || '#27ae60';
-    t.style.display = 'block';
-    setTimeout(() => t.style.display = 'none', 3000);
-}
-
-document.querySelectorAll('.btn-delete').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-        if (!confirm('Delete this request?')) return;
-        const id   = this.dataset.id;
-        const row  = document.getElementById('row-' + id);
-        const xhr  = new XMLHttpRequest();
-
-        xhr.open('POST', 'index.php?page=scout_delete', true);
-        xhr.setRequestHeader('Content-Type', 'application/json');
-
-        xhr.onload = function() {
-            if (xhr.status === 200) {
-                const res = JSON.parse(xhr.responseText);
-                if (res.success) {
-                    if (row) row.remove();
-                    showToast('Deleted successfully.', '#e74c3c');
-                } else {
-                    showToast(res.message, '#e74c3c');
-                }
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/travel_guide/api/scout_delete_request.php', true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.onload = function () {
+        if (xhr.status === 200) {
+            var res = JSON.parse(xhr.responseText);
+            if (res.success) {
+                var row = document.getElementById('req-' + id);
+                if (row) row.remove();
+            } else {
+                alert('Could not delete request.');
             }
-        };
-        xhr.onerror = function() {
-            showToast('Network error.', '#e74c3c');
-        };
+        }
+    };
+    xhr.send(JSON.stringify({ id: id }));
+}
 
-        xhr.send(JSON.stringify({ id: parseInt(id) }));
+// Scout form JS validation
+document.addEventListener('DOMContentLoaded', function () {
+    var form = document.getElementById('scoutForm');
+    if (!form) return;
+    form.addEventListener('submit', function (e) {
+        var valid = true;
+        var title = form.querySelector('[name="title"]');
+        var titleErr = document.getElementById('titleError');
+        if (title && title.value.trim().length < 3) {
+            if (titleErr) titleErr.textContent = 'Title must be at least 3 characters.';
+            valid = false;
+        } else if (titleErr) {
+            titleErr.textContent = '';
+        }
+
+        var history = form.querySelector('[name="short_history"]');
+        var histErr = document.getElementById('historyError');
+        if (history && history.value.trim().length < 20) {
+            if (histErr) histErr.textContent = 'Please provide a description (min 20 chars).';
+            valid = false;
+        } else if (histErr) {
+            histErr.textContent = '';
+        }
+
+        if (!valid) e.preventDefault();
     });
 });
