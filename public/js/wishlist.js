@@ -1,65 +1,52 @@
-function showToast(msg, color) {
-    const toast = document.getElementById('toast');
-    if (!toast) return;
-    toast.textContent = msg;
-    toast.style.background = color || '#27ae60';
-    toast.style.display = 'block';
-    setTimeout(() => { toast.style.display = 'none'; }, 3000);
-}
+//Wishlist AJAX using XMLHttpRequest
 
-// ── Wishlist page: Remove buttons ────────────────────────────
-document.querySelectorAll('.btn-remove').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-        const postId = this.dataset.postId;
-        if (!confirm('Remove this destination from your wishlist?')) return;
-
-        fetch('/api/wishlist/remove', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ post_id: parseInt(postId) })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                const row = document.getElementById('row-' + postId);
-                if (row) row.remove();
-                showToast('Removed from wishlist.', '#e74c3c');
-
-                // If table is now empty
-                const tbody = document.querySelector('#wishlistTable tbody');
-                if (tbody && tbody.children.length === 0) {
-                    location.reload();
+function addWishlist(postId) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/travel_guide/api/wishlist_add.php', true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.onload = function () {
+        if (xhr.status === 200) {
+            var res = JSON.parse(xhr.responseText);
+            if (res.success) {
+                var btn = document.getElementById('wlBtn');
+                if (btn) {
+                    btn.textContent = '❤ Remove from Wishlist';
+                    btn.className = 'btn btn-outline btn-danger';
+                    btn.setAttribute('onclick', 'removeWishlist(' + postId + ')');
                 }
             } else {
-                showToast(data.message || 'Error removing item.', '#e74c3c');
+                alert(res.message || 'Failed to add.');
             }
-        })
-        .catch(() => showToast('Network error.', '#e74c3c'));
-    });
-});
+        }
+    };
+    xhr.send(JSON.stringify({ post_id: postId }));
+}
 
-// ── Home page: Add to Wishlist buttons ───────────────────────
-document.querySelectorAll('.wishlist-btn').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-        const postId = this.dataset.postId;
-        const self   = this;
-
-        fetch('/api/wishlist/add', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ post_id: parseInt(postId) })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                self.textContent = '✅ Added';
-                self.disabled = true;
-                self.style.background = '#27ae60';
-                showToast('Added to wishlist!');
+function removeWishlist(postId) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/travel_guide/api/wishlist_remove.php', true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.onload = function () {
+        if (xhr.status === 200) {
+            var res = JSON.parse(xhr.responseText);
+            if (res.success) {
+                // If on wishlist page, remove card
+                var card = document.getElementById('wl-' + postId);
+                if (card) {
+                    card.remove();
+                    return;
+                }
+                // If on detail page, toggle button
+                var btn = document.getElementById('wlBtn');
+                if (btn) {
+                    btn.textContent = '🤍 Add to Wishlist';
+                    btn.className = 'btn btn-outline';
+                    btn.setAttribute('onclick', 'addWishlist(' + postId + ')');
+                }
             } else {
-                showToast(data.message || 'Could not add.', '#e67e22');
+                alert(res.message || 'Failed to remove.');
             }
-        })
-        .catch(() => showToast('Network error.', '#e74c3c'));
-    });
-});
+        }
+    };
+    xhr.send(JSON.stringify({ post_id: postId }));
+}
