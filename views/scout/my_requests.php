@@ -1,41 +1,57 @@
-<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>My Requests</title></head>
-<body>
-<div style="max-width:860px;margin:30px auto;padding:0 20px;">
-  <h2>My Requests</h2>
-  <a href="index.php?page=scout_create" style="background:#2c3e50;color:#fff;padding:8px 16px;text-decoration:none;border-radius:4px;">+ New Request</a>
-  <br><br>
+<?php
+// [TASK 2] My Requests view
+require 'views/layouts/header.php';
+?>
+<h2>My Requests</h2>
+<a href="index.php?action=scout_create" class="btn btn-primary" style="margin-bottom:1rem;">+ New Request</a>
 
-  <?php if (empty($requests)): ?>
+<?php if (empty($requests)): ?>
     <p>No requests yet.</p>
-  <?php else: ?>
-    <table border="1" cellpadding="8" cellspacing="0" style="width:100%;border-collapse:collapse;">
-      <tr style="background:#2c3e50;color:#fff;">
-        <th>#</th><th>Title</th><th>Country</th><th>Genre</th><th>Cost</th><th>Status</th><th>Actions</th>
-      </tr>
-      <?php foreach ($requests as $i => $r):
-        $d = json_decode($r['post_data'], true);
-      ?>
-      <tr id="row-<?= $r['id'] ?>">
-        <td><?= $i+1 ?></td>
-        <td><?= htmlspecialchars($d['title'] ?? '', ENT_QUOTES, 'UTF-8') ?></td>
-        <td><?= htmlspecialchars($d['country'] ?? '', ENT_QUOTES, 'UTF-8') ?></td>
-        <td><?= htmlspecialchars($d['genre'] ?? '', ENT_QUOTES, 'UTF-8') ?></td>
-        <td><?= strtoupper($d['cost'] ?? '') ?></td>
-        <td><?= htmlspecialchars($r['status'], ENT_QUOTES, 'UTF-8') ?></td>
-        <td>
-          <?php if ($r['status'] === 'pending'): ?>
-            <a href="index.php?page=scout_edit&id=<?= $r['id'] ?>">Edit</a> |
-            <button class="btn-delete" data-id="<?= $r['id'] ?>" style="background:#e74c3c;color:#fff;border:none;padding:4px 10px;cursor:pointer;">Delete</button>
-          <?php else: ?>
-            <span style="color:#999;">—</span>
-          <?php endif; ?>
-        </td>
-      </tr>
-      <?php endforeach; ?>
-    </table>
-  <?php endif; ?>
-</div>
-<div id="toast" style="position:fixed;bottom:20px;right:20px;padding:12px 20px;border-radius:6px;color:#fff;display:none;"></div>
-<script src="public/js/scout.js"></script>
-</body></html>
+<?php else: ?>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr><th>Title</th><th>Country</th><th>Genre</th><th>Status</th><th>Date</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+                <?php foreach ($requests as $req):
+                    $data = json_decode($req['post_data'], true);
+                ?>
+                <tr id="req-<?= $req['id'] ?>">
+                    <td><?= htmlspecialchars($data['title'] ?? '') ?></td>
+                    <td><?= htmlspecialchars($data['country'] ?? '') ?></td>
+                    <td><?= htmlspecialchars($data['genre'] ?? '') ?></td>
+                    <td><span class="status-badge status-<?= $req['status'] ?>"><?= $req['status'] ?></span></td>
+                    <td><?= date('M d, Y', strtotime($req['requested_at'])) ?></td>
+                    <td>
+                        <?php if ($req['status'] === 'pending'): ?>
+                            <a href="index.php?action=scout_edit&id=<?= $req['id'] ?>" class="btn btn-sm">Edit</a>
+                            <button class="btn btn-sm btn-danger" onclick="deleteRequest(<?= $req['id'] ?>)">Delete</button>
+                        <?php else: ?>
+                            <span class="muted">—</span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+<?php endif; ?>
+
+<?php if (!empty($approvedPosts)): ?>
+    <h3 style="margin-top:2rem;">My Published Posts</h3>
+    <div class="post-grid">
+        <?php foreach ($approvedPosts as $post): ?>
+            <div class="card">
+                <div class="card-body">
+                    <h3><?= htmlspecialchars($post['title']) ?></h3>
+                    <p>📍 <?= htmlspecialchars($post['country']) ?></p>
+                    <a href="index.php?action=scout_create&original=<?= $post['id'] ?>" class="btn btn-sm btn-outline">Request Changes</a>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    </div>
+<?php endif; ?>
+
+<script src="/travel_guide/public/js/scout.js"></script>
+<?php require 'views/layouts/footer.php'; ?>
