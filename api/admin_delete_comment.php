@@ -1,13 +1,16 @@
 <?php
-require_once __DIR__ . '/../config/app.php';
-require_once __DIR__ . '/../models/OtherModels.php';
-require_once __DIR__ . '/../controllers/AdminController.php';
-startSession();
+// [TASK 3] AJAX: Admin delete any comment
+session_start();
+header('Content-Type: application/json');
+require_once '../config/db.php';
+require_once '../models/Comment.php';
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    jsonResponse(['success' => false, 'message' => 'Method not allowed.'], 405);
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
+    echo json_encode(['success' => false]); exit;
 }
 
-$id   = intval($_POST['id'] ?? 0);
-$ctrl = new AdminController();
-$ctrl->deleteComment($id);
+$data = json_decode(file_get_contents('php://input'), true);
+$id   = intval($data['id'] ?? 0);
+$model = new Comment($conn);
+$model->delete($id);
+echo json_encode(['success' => true]);
