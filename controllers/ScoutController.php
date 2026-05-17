@@ -1,181 +1,122 @@
 <?php
+// [TASK 2] Scout Controller
+require_once 'models/PostRequest.php';
+require_once 'models/Post.php';
+
 class ScoutController {
-    private $model;
-    public function __construct($model) { $this->model = $model; }
 
-    private function gate() {
-        if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'scout' || !$_SESSION['is_verified']) {
-            header('Location: index.php?page=login'); exit;
+    private static function gate() {
+        if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scout' || !$_SESSION['verified']) {
+            header("Location: index.php?action=login"); exit;
         }
     }
 
-    public function showCreate() {
-        $this->gate();
-        $error   = $_SESSION['error'] ?? '';
-        $success = $_SESSION['success'] ?? '';
-        unset($_SESSION['error'], $_SESSION['success']);
-        require ROOT . '/views/scout/create.php';
+    public static function dashboard() {
+        self::gate();
+        global $conn;
+        $prModel = new PostRequest($conn);
+        $requests = $prModel->getByScout($_SESSION['user_id']);
+        require 'views/scout/dashboard.php';
     }
 
-    public function create() {
-        $this->gate();
+    public static function myRequests() {
+        self::gate();
+        global $conn;
+        $prModel = new PostRequest($conn);
+        $postModel = new Post($conn);
+        $requests = $prModel->getByScout($_SESSION['user_id']);
+        $approvedPosts = $postModel->getByScout($_SESSION['user_id']);
+        require 'views/scout/my_requests.php';
+    }
 
-        $title   = trim($_POST['title'] ?? '');
-        $history = trim($_POST['history'] ?? '');
-        $country = trim($_POST['country'] ?? '');
-        $genre   = $_POST['genre'] ?? '';
-        $cost    = $_POST['cost'] ?? '';
-        $travel  = trim($_POST['travel'] ?? '');
+    public static function createRequest() {
+        self::gate();
+        global $conn;
+        $errors = []; $success = '';
 
-        if (!$title || !$history || !$country || !$genre || !$cost || !$travel) {
-            $_SESSION['error'] = 'All fields are required.';
-            header('Location: index.php?page=scout_create'); exit;
-        }
-        if (!in_array($genre, ['beach','mountain','city','historical','other'])) {
-            $_SESSION['error'] = 'Invalid genre.';
-            header('Location: index.php?page=scout_create'); exit;
-        }
-        if (!in_array($cost, ['low','medium','high'])) {
-            $_SESSION['error'] = 'Invalid cost level.';
-            header('Location: index.php?page=scout_create'); exit;
-        }
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $title       = trim($_POST['title'] ?? '');
+            $history     = trim($_POST['short_history'] ?? '');
+            $country     = trim($_POST['country'] ?? '');
+            $genre       = $_POST['genre'] ?? '';
+            $cost_level  = $_POST['cost_level'] ?? '';
+            $travel_info = trim($_POST['travel_medium_info'] ?? '');
+            $originalPostId = intval($_POST['original_post_id'] ?? 0) ?: null;
 
-        // Image upload (optional)
-        $imagePath = null;
-        if (!empty($_FILES['image']['name'])) {
-            $file    = $_FILES['image'];
-            $allowed = ['image/jpeg','image/png','image/gif','image/webp'];
-            $finfo   = finfo_open(FILEINFO_MIME_TYPE);
-            $mime    = finfo_file($finfo, $file['tmp_name']);
-            finfo_close($finfo);
-            if (!in_array($mime, $allowed)) {
-                $_SESSION['error'] = 'Only JPEG, PNG, GIF, WEBP allowed.';
-                header('Location: index.php?page=scout_create'); exit;
+            if (!$title)      $errors[] = "Title required.";
+            if (!$history)    $errors[] = "Short history required.";
+            if (!$country)    $errors[] = "Country required.";
+            if (!in_array($genre, ['beach','mountain','city','historical','other'])) $errors[] = "Invalid genre.";
+            if (!in_array($cost_level, ['low','medium','high'])) $errors[] = "Invalid cost level.";
+
+            $imagePath = null;
+            if (!empty($_FILES['image']['name'])) {
+                $allowed = ['image/jpeg','image/png','image/gif','image/webp'];
+                $mime = mime_content_type($_FILES['image']['tmp_name']);
+                if (!in_array($mime, $allowed))   $errors[] = "Invalid image type.";
+                if ($_FILES['image']['size'] > 5 * 1024 * 1024) $errors[] = "Image too large (max 5MB).";
+                if (!$errors) {
+                    $ext = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
+                    $imagePath = 'public/uploads/posts/' . uniqid() . '.' . $ext;
+                    move_uploaded_file($_FILES['image']['tmp_name'], $imagePath);
+                }
             }
-            if ($file['size'] > 2 * 1024 * 1024) {
-                $_SESSION['error'] = 'Image must be under 2MB.';
-                header('Location: index.php?page=scout_create'); exit;
+
+            if (!$errors) {
+                $data = compact('title','history','country','genre','cost_level','travel_info');
+                $data['short_history'] = $history;
+                $data['travel_medium_info'] = $travel_info;
+                $prModel = new PostRequest($conn);
+                $prModel->create($_SESSION['user_id'], $data, $imagePath, $originalPostId);
+                $success = "Request submitted successfully!";
             }
-            $ext       = pathinfo($file['name'], PATHINFO_EXTENSION);
-            $filename  = 'post_' . $_SESSION['user_id'] . '_' . time() . '.' . $ext;
-            $imagePath = $filename;
-            move_uploaded_file($file['tmp_name'], ROOT . '/public/uploads/posts/' . $filename);
         }
-
-        $data = [
-            'title'   => $title,
-            'history' => $history,
-            'country' => $country,
-            'genre'   => $genre,
-            'cost'    => $cost,
-            'travel'  => $travel,
-            'image'   => $imagePath
-        ];
-
-        $this->model->create($_SESSION['user_id'], $data, $imagePath);
-        $_SESSION['success'] = 'Post request submitted!';
-        header('Location: index.php?page=scout_requests'); exit;
+        require 'views/scout/create_request.php';
     }
 
-    public function myRequests() {
-        $this->gate();
-        $requests = $this->model->getByScout($_SESSION['user_id']);
-        require ROOT . '/views/scout/my_requests.php';
-    }
+    public static function editRequest() {
+        self::gate();
+        global $conn;
+        $id = intval($_GET['id'] ?? 0);
+        $prModel = new PostRequest($conn);
+        $request = $prModel->getById($id);
 
-    public function showEdit() {
-        $this->gate();
-        $id      = (int)($_GET['id'] ?? 0);
-        $request = $this->model->getById($id);
         if (!$request || $request['scout_id'] != $_SESSION['user_id'] || $request['status'] !== 'pending') {
-            $_SESSION['error'] = 'Not found or not editable.';
-            header('Location: index.php?page=scout_requests'); exit;
-        }
-        $postData = json_decode($request['post_data'], true);
-        $error    = $_SESSION['error'] ?? '';
-        $success  = $_SESSION['success'] ?? '';
-        unset($_SESSION['error'], $_SESSION['success']);
-        require ROOT . '/views/scout/edit.php';
-    }
-
-    public function update() {
-        $this->gate();
-        $id      = (int)($_POST['id'] ?? 0);
-        $title   = trim($_POST['title'] ?? '');
-        $history = trim($_POST['history'] ?? '');
-        $country = trim($_POST['country'] ?? '');
-        $genre   = $_POST['genre'] ?? '';
-        $cost    = $_POST['cost'] ?? '';
-        $travel  = trim($_POST['travel'] ?? '');
-
-        if (!$title || !$history || !$country || !$genre || !$cost || !$travel) {
-            $_SESSION['error'] = 'All fields are required.';
-            header('Location: index.php?page=scout_edit&id=' . $id); exit;
+            header("Location: index.php?action=scout_my_requests"); exit;
         }
 
-        $data = [
-            'title'   => $title,
-            'history' => $history,
-            'country' => $country,
-            'genre'   => $genre,
-            'cost'    => $cost,
-            'travel'  => $travel
-        ];
+        $data = json_decode($request['post_data'], true);
+        $errors = []; $success = '';
 
-        $this->model->update($id, $_SESSION['user_id'], $data);
-        $_SESSION['success'] = 'Request updated!';
-        header('Location: index.php?page=scout_requests'); exit;
-    }
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $title       = trim($_POST['title'] ?? '');
+            $history     = trim($_POST['short_history'] ?? '');
+            $country     = trim($_POST['country'] ?? '');
+            $genre       = $_POST['genre'] ?? '';
+            $cost_level  = $_POST['cost_level'] ?? '';
+            $travel_info = trim($_POST['travel_medium_info'] ?? '');
 
-    // AJAX DELETE
-    public function delete() {
-        header('Content-Type: application/json');
-        $this->gate();
-        $data = json_decode(file_get_contents('php://input'), true);
-        $id   = (int)($data['id'] ?? 0);
-        if (!$id) {
-            echo json_encode(['success' => false, 'message' => 'Invalid ID.']); exit;
+            if (!$title || !$history || !$country) $errors[] = "Required fields missing.";
+            if (!in_array($genre, ['beach','mountain','city','historical','other'])) $errors[] = "Invalid genre.";
+
+            $imagePath = null;
+            if (!empty($_FILES['image']['name'])) {
+                $mime = mime_content_type($_FILES['image']['tmp_name']);
+                if (!in_array($mime, ['image/jpeg','image/png','image/gif','image/webp'])) $errors[] = "Invalid image.";
+                else {
+                    $ext = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
+                    $imagePath = 'public/uploads/posts/' . uniqid() . '.' . $ext;
+                    move_uploaded_file($_FILES['image']['tmp_name'], $imagePath);
+                }
+            }
+
+            if (!$errors) {
+                $newData = ['title'=>$title,'short_history'=>$history,'country'=>$country,'genre'=>$genre,'cost_level'=>$cost_level,'travel_medium_info'=>$travel_info];
+                $prModel->update($id, $_SESSION['user_id'], $newData, $imagePath);
+                $success = "Request updated.";
+                $data = $newData;
+            }
         }
-        $result = $this->model->delete($id, $_SESSION['user_id']);
-        echo json_encode([
-            'success' => $result,
-            'message' => $result ? 'Deleted.' : 'Could not delete.'
-        ]);
-        exit;
-    }
-
-    public function approvedPosts() {
-        $this->gate();
-        $posts = $this->model->getApprovedByScout($_SESSION['user_id']);
-        require ROOT . '/views/scout/approved_posts.php';
-    }
-
-    public function requestChange() {
-        $this->gate();
-        $postId  = (int)($_POST['post_id'] ?? 0);
-        $title   = trim($_POST['title'] ?? '');
-        $history = trim($_POST['history'] ?? '');
-        $country = trim($_POST['country'] ?? '');
-        $genre   = $_POST['genre'] ?? '';
-        $cost    = $_POST['cost'] ?? '';
-        $travel  = trim($_POST['travel'] ?? '');
-
-        if (!$postId || !$title || !$history || !$country || !$genre || !$cost || !$travel) {
-            $_SESSION['error'] = 'All fields are required.';
-            header('Location: index.php?page=scout_approved'); exit;
-        }
-
-        $data = [
-            'title'   => $title,
-            'history' => $history,
-            'country' => $country,
-            'genre'   => $genre,
-            'cost'    => $cost,
-            'travel'  => $travel
-        ];
-
-        $this->model->requestChange($_SESSION['user_id'], $postId, $data);
-        $_SESSION['success'] = 'Change request submitted!';
-        header('Location: index.php?page=scout_approved'); exit;
+        require 'views/scout/edit_request.php';
     }
 }
