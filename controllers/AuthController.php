@@ -1,120 +1,169 @@
 <?php
-require_once __DIR__ . '/../models/UserModel.php';
+//Authentication Controller
+require_once 'models/User.php';
 
 class AuthController {
-    private $userModel;
 
-    public function __construct() {
-        $this->userModel = new UserModel();
-    }
+    // Home page
+    public static function home() {
+        global $conn;
+        $user = null;
+        $posts = [];
 
-    // ── REGISTER ──────────────────────────────────────────────
-    public function showRegister(): void {
-        $error = $_SESSION['flash_error'] ?? null;
-        $success = $_SESSION['flash_success'] ?? null;
-        unset($_SESSION['flash_error'], $_SESSION['flash_success']);
-        require __DIR__ . '/../views/auth/register.php';
-    }
-
-    public function handleRegister(): void {
-        // CSRF check
-        if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
-            $_SESSION['flash_error'] = 'Invalid request.';
-            header('Location: /register');
-            exit;
+        // auto-login
+        if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
+            $userModel = new User($conn);
+            $tokenHash = hash('sha256', $_COOKIE['remember_token']);
+            $user = $userModel->findByRememberToken($tokenHash);
+            if ($user) {
+                $_SESSION['user_id']   = $user['id'];
+                $_SESSION['name']      = $user['name'];
+                $_SESSION['role']      = $user['role'];
+                $_SESSION['verified']  = $user['is_verified'];
+            }
         }
 
-        $name     = trim($_POST['name'] ?? '');
-        $email    = trim($_POST['email'] ?? '');
-        $password = $_POST['password'] ?? '';
-        $confirm  = $_POST['confirm_password'] ?? '';
-        $role     = $_POST['role'] ?? '';
-
-        // Server-side validation
-        $errors = [];
-        if (empty($name))                          $errors[] = 'Name is required.';
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'Valid email is required.';
-        if (strlen($password) < 8)                 $errors[] = 'Password must be at least 8 characters.';
-        if ($password !== $confirm)                $errors[] = 'Passwords do not match.';
-        if (!in_array($role, ['admin','scout','user'])) $errors[] = 'Invalid role selected.';
-        if ($this->userModel->emailExists($email)) $errors[] = 'Email already registered.';
-
-        if ($errors) {
-            $_SESSION['flash_error'] = implode('<br>', $errors);
-            header('Location: /register');
-            exit;
-        }
-
-        $this->userModel->create([
-            'name'     => $name,
-            'email'    => $email,
-            'password' => $password,
-            'role'     => $role,
-        ]);
-
-        $_SESSION['flash_success'] = 'Registration successful! Please wait for admin approval.';
-        header('Location: /login');
-        exit;
-    }
-
-    // ── LOGIN ─────────────────────────────────────────────────
-    public function showLogin(): void {
-        $error   = $_SESSION['flash_error'] ?? null;
-        $success = $_SESSION['flash_success'] ?? null;
-        unset($_SESSION['flash_error'], $_SESSION['flash_success']);
-        require __DIR__ . '/../views/auth/login.php';
-    }
-
-    public function handleLogin(): void {
-        if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
-            $_SESSION['flash_error'] = 'Invalid request.';
-            header('Location: /login');
-            exit;
-        }
-
-        $email    = trim($_POST['email'] ?? '');
-        $password = $_POST['password'] ?? '';
-        $remember = isset($_POST['remember_me']);
-
-        if (empty($email) || empty($password)) {
-            $_SESSION['flash_error'] = 'Email and password are required.';
-            header('Location: /login');
-            exit;
-        }
-
-        $user = $this->userModel->findByEmail($email);
-
-        if (!$user || !password_verify($password, $user['password_hash'])) {
-            $_SESSION['flash_error'] = 'Invalid email or password.';
-            header('Location: /login');
-            exit;
-        }
-
-        // Set session
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['name']    = $user['name'];
-        $_SESSION['role']    = $user['role'];
-        $_SESSION['is_verified'] = $user['is_verified'];
-
-        // Remember Me
-        if ($remember) {
-            $token = bin2hex(random_bytes(32));
-            $this->userModel->setRememberToken($user['id'], $token);
-            setcookie('remember_token', $token, time() + (30 * 24 * 3600), '/', '', false, true);
-        }
-
-        header('Location: /home');
-        exit;
-    }
-
-    // ── LOGOUT ────────────────────────────────────────────────
-    public function handleLogout(): void {
         if (isset($_SESSION['user_id'])) {
-            $this->userModel->clearRememberToken($_SESSION['user_id']);
+            $user = ['name' => $_SESSION['name'], 'role' => $_SESSION['role'], 'verified' => $_SESSION['verified']];
+            if ($_SESSION['verified']) {
+                require_once 'models/Post.php';
+                $postModel = new Post($conn);
+                $posts = $postModel->getLatestApproved(6);
+            }
+        }
+        require 'views/home/index.php';
+    }
+
+    // Register
+    public static function register() {
+        global $conn;
+        $errors = [];
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $name  = trim($_POST['name'] ?? '');
+            $email = trim($_POST['email'] ?? '');
+            $pass  = $_POST['password'] ?? '';
+            $confirm = $_POST['confirm_password'] ?? '';
+            $role  = $_POST['role'] ?? 'user';
+
+            if (!$name)                          $errors[] = "Name is required.";
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = "Invalid email.";
+            if (strlen($pass) < 8)               $errors[] = "Password must be at least 8 characters.";
+            if ($pass !== $confirm)              $errors[] = "Passwords do not match.";
+            if (!in_array($role, ['admin','scout','user'])) $errors[] = "Invalid role.";
+
+            if (!$errors) {
+                $userModel = new User($conn);
+                if ($userModel->findByEmail($email)) {
+                    $errors[] = "Email already registered.";
+                } else {
+                    $hash = password_hash($pass, PASSWORD_BCRYPT);
+                    $userModel->create($name, $email, $hash, $role);
+                    $_SESSION['flash'] = "Registration successful! Please wait for admin approval.";
+                    header("Location: index.php?action=login");
+                    exit;
+                }
+            }
+        }
+        require 'views/auth/register.php';
+    }
+
+    // Login
+    public static function login() {
+        global $conn;
+        $errors = [];
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $email  = trim($_POST['email'] ?? '');
+            $pass   = $_POST['password'] ?? '';
+            $remember = isset($_POST['remember']);
+
+            if (!$email || !$pass) { $errors[] = "All fields required."; }
+
+            if (!$errors) {
+                $userModel = new User($conn);
+                $user = $userModel->findByEmail($email);
+                if ($user && password_verify($pass, $user['password_hash'])) {
+                    $_SESSION['user_id']  = $user['id'];
+                    $_SESSION['name']     = $user['name'];
+                    $_SESSION['role']     = $user['role'];
+                    $_SESSION['verified'] = $user['is_verified'];
+
+                    if ($remember) {
+                        $token = bin2hex(random_bytes(32));
+                        $tokenHash = hash('sha256', $token);
+                        $userModel->setRememberToken($user['id'], $tokenHash);
+                        setcookie('remember_token', $token, time() + 86400 * 30, '/', '', false, true);
+                    }
+                    header("Location: index.php?action=home");
+                    exit;
+                } else {
+                    $errors[] = "Invalid email or password.";
+                }
+            }
+        }
+        require 'views/auth/login.php';
+    }
+
+    // Logout
+    public static function logout() {
+        global $conn;
+        if (isset($_SESSION['user_id'])) {
+            $userModel = new User($conn);
+            $userModel->clearRememberToken($_SESSION['user_id']);
         }
         session_destroy();
         setcookie('remember_token', '', time() - 3600, '/');
-        header('Location: /login');
+        header("Location: index.php?action=login");
         exit;
+    }
+
+    // Profile
+    public static function profile() {
+        global $conn;
+        if (!isset($_SESSION['user_id'])) { header("Location: index.php?action=login"); exit; }
+
+        $userModel = new User($conn);
+        $user = $userModel->findById($_SESSION['user_id']);
+        $errors = []; $success = '';
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $name  = trim($_POST['name'] ?? '');
+            $email = trim($_POST['email'] ?? '');
+
+            if (!$name) $errors[] = "Name required.";
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = "Invalid email.";
+
+            $picturePath = $user['profile_picture'];
+            if (!empty($_FILES['profile_picture']['name'])) {
+                $allowed = ['image/jpeg','image/png','image/gif','image/webp'];
+                $mime = mime_content_type($_FILES['profile_picture']['tmp_name']);
+                if (!in_array($mime, $allowed))    $errors[] = "Invalid image type.";
+                if ($_FILES['profile_picture']['size'] > 2 * 1024 * 1024) $errors[] = "Image too large (max 2MB).";
+                if (!$errors) {
+                    $ext = pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION);
+                    $picturePath = 'public/uploads/profiles/' . uniqid() . '.' . $ext;
+                    move_uploaded_file($_FILES['profile_picture']['tmp_name'], $picturePath);
+                }
+            }
+
+            if (!$errors) {
+                $userModel->updateProfile($user['id'], $name, $email, $picturePath);
+                // Change password
+                if (!empty($_POST['new_password'])) {
+                    if (!password_verify($_POST['current_password'], $user['password_hash'])) {
+                        $errors[] = "Current password incorrect.";
+                    } elseif (strlen($_POST['new_password']) < 8) {
+                        $errors[] = "New password too short.";
+                    } else {
+                        $userModel->updatePassword($user['id'], password_hash($_POST['new_password'], PASSWORD_BCRYPT));
+                    }
+                }
+                if (!$errors) {
+                    $success = "Profile updated successfully.";
+                    $_SESSION['name'] = $name;
+                    $user = $userModel->findById($_SESSION['user_id']);
+                }
+            }
+        }
+        require 'views/profile/index.php';
     }
 }
