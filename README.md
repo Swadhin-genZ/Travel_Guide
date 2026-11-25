@@ -1,2 +1,2 @@
 # Travel_Guide
-It a WebTech project with HTML,CSS,PhP and JavaScript
+It is a WebTech project with HTML,CSS,PhP and JavaScript
